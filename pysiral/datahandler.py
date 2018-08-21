@@ -3,6 +3,9 @@
 Created on Fri May 19 18:16:09 2017
 
 @author: Stefan
+
+FMI version: August 2018
+icechart and icechart_aari added in the auxdata
 """
 
 from pysiral.config import ConfigInfo
@@ -10,6 +13,8 @@ from pysiral.logging import DefaultLoggingClass
 from pysiral.errorhandler import ErrorStatus, PYSIRAL_ERROR_CODES
 from pysiral.iotools import get_local_l1bdata_files
 from pysiral.sic import get_l2_sic_handler
+# fmi version: ice chart module added
+from pysiral.icechart import get_l2_sic_ic_handler
 from pysiral.sitype import get_l2_sitype_handler
 from pysiral.snow import get_l2_snow_handler
 from pysiral.mss import get_l2_ssh_class
@@ -28,9 +33,11 @@ class DefaultAuxdataHandler(DefaultLoggingClass):
     from `auxdata.yaml` configuration file.
     """
 
-    valid_auxdata_classes = ["mss", "sic", "sitype", "snow"]
+    # fmi version: sic from ice ice chart and aari ice chart added
+    valid_auxdata_classes = ["mss", "sic", "sitype", "snow", "icechart", "icechart_aari"]
     getcls = {"mss": get_l2_ssh_class, "sic": get_l2_sic_handler,
-              "sitype": get_l2_sitype_handler, "snow": get_l2_snow_handler}
+              "sitype": get_l2_sitype_handler, "snow": get_l2_snow_handler,
+              "icechart": get_l2_sic_ic_handler, "icechart_aari": get_l2_sic_ic_handler}
 
     def __init__(self):
         super(DefaultAuxdataHandler, self).__init__(self.__class__.__name__)
