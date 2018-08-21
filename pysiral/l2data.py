@@ -3,6 +3,9 @@
 Created on Fri Jul 24 16:30:24 2015
 
 @author: Stefan
+
+Modified on August 2018 by FMI
+Classes impacted: Level2Data, Level2PContainer
 """
 
 from pysiral.config import (PYSIRAL_VERSION, PYSIRAL_VERSION_FILENAME,
@@ -24,9 +27,15 @@ import re
 
 class Level2Data(object):
 
+    # L2 parameters added in fmi version
     _L2_DATA_ITEMS = ["mss", "ssa", "elev",  "afrb", "frb", "range", "sic",
                       "sitype", "snow_depth",  "snow_dens",  "ice_dens",
-                      "sit", "radar_mode"]
+                      "sit", "radar_mode", "ic_ct", "ic_ca", "ic_cb", "ic_cc", "ic_sa",
+                      "ic_sb", "ic_sc", "ica_ct", "ica_ca", "ica_cb", "ica_cc",
+                      "ica_sa", "ica_sb", "ica_sc", "pp", "ppl", "ppr", "ssd",
+                      "lew", "ltpp","rio_pc1", "rio_pc2", "rio_pc3", "rio_pc4", 
+		              "rio_pc5", "rio_pc6", "rio_pc7", "rio_1asuper", "rio_1a",
+		              "rio_1b", "rio_1c", "rio_no_ice_class"]
 
     _HEMISPHERE_CODES = {"north": "nh", "south": "sh"}
 
@@ -48,7 +57,39 @@ class Level2Data(object):
         "ice_density": "ice_dens",
         "sea_ice_thickness": "sit",
         "sea_ice_concentration": "sic",
-        "radar_mode": "radar_mode"}
+        "radar_mode": "radar_mode",
+        "icechart_ct": "ic_ct",
+        "icechart_ca": "ic_ca",
+        "icechart_cb": "ic_cb",
+        "icechart_cc": "ic_cc",
+        "icechart_sa": "ic_sa",
+        "icechart_sb": "ic_sb",
+        "icechart_sc": "ic_sc",
+        "icechart_aari_ct": "ica_ct",
+        "icechart_aari_ca": "ica_ca",
+        "icechart_aari_cb": "ica_cb",
+        "icechart_aari_cc": "ica_cc",
+        "icechart_aari_sa": "ica_sa",
+        "icechart_aari_sb": "ica_sb",
+        "icechart_aari_sc": "ica_sc",
+        "pulse_peakiness": "pp",
+        "pulse_peakiness_left": "ppl",
+        "pulse_peakiness_right": "ppr",
+        "leading_edge_width": "lew",
+        "late_tail_to_peak_power": "ltpp",
+        "stack_standard_deviation": "ssd",
+        "rio_pc1": "rio_pc1",
+	    "rio_pc2": "rio_pc2",
+	    "rio_pc3": "rio_pc3",
+	    "rio_pc4": "rio_pc4",
+        "rio_pc5": "rio_pc5",
+        "rio_pc6": "rio_pc6",
+        "rio_pc7": "rio_pc7",
+        "rio_1asuper": "rio_1asuper",
+        "rio_1a": "rio_1a",
+        "rio_1b": "rio_1b",
+        "rio_1c": "rio_1c",
+        "rio_no_ice_class": "rio_no_ice_class"}
 
     _PROPERTY_CATALOG = {
         "sea_surface_height": "ssh"}
@@ -673,6 +714,9 @@ class Level2PContainer(DefaultLoggingClass):
             metadata.source_auxdata_snow = l2i.info.source_auxdata_snow
             metadata.source_auxdata_sitype = l2i.info.source_auxdata_sitype
             metadata.source_auxdata_mss = l2i.info.source_auxdata_mss
+            # ice chart source added in fmi version
+            metadata.source_auxdata_icechart = l2i.info.source_auxdata_icechart
+            metadata.source_auxdata_icechart_aari = l2i.info.source_auxdata_icechart_aari
 
         try:
             metadata.timeliness = l2i.info.source_timeliness
