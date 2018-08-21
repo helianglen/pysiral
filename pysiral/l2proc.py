@@ -3,6 +3,9 @@
 Created on Fri Jul 24 14:04:27 2015
 
 @author: Stefan
+
+Modified on August 2018 by FMI
+Classes impacted: L2Processor
 """
 
 from pysiral.config import (td_branches, ConfigInfo, TimeRangeRequest,
@@ -23,6 +26,8 @@ from pysiral.filter import get_filter
 from pysiral.validator import get_validator
 from pysiral.frb import get_frb_algorithm
 from pysiral.sit import get_sit_algorithm
+# fmi version: rio module added
+from pysiral.rio import get_l2_rio_handler
 from pysiral.path import filename_from_path, file_basename
 
 from dateutil.relativedelta import relativedelta
@@ -90,7 +95,8 @@ class Level2Processor(DefaultLoggingClass):
         """ A dictionary that contains the descriptions of the auxiliary
         data sources """
         auxdata_dict = {}
-        for auxdata_type in ["mss", "sic", "sitype", "snow"]:
+        # fmi version: ice chart and ice chart aari added 
+        for auxdata_type in ["mss", "sic", "sitype", "snow", "icechart", "icechart_aari"]:
             try:
                 handler = getattr(self, "_"+auxdata_type)
                 auxdata_dict[auxdata_type] = handler.longname
@@ -212,6 +218,14 @@ class Level2Processor(DefaultLoggingClass):
 
         # Sea ice concentration data handler
         self._set_sic_handler()
+        
+        # fmi modification to include ice concentration from ice chart
+        # Sea ice concentration from ic data handler
+        self._set_sic_ic_handler()
+
+        # fmi modification to include ice concentration from aari ice chart
+        # Set aari ic data handler
+        self._set_sic_ica_handler()
 
         # sea ice type data handler (needs to be before snow)
         self._set_sitype_handler()
@@ -251,6 +265,30 @@ class Level2Processor(DefaultLoggingClass):
         self._sic.initialize()
         self.log.info("Processor Settings - SIC handler: %s" % (
             self._sic.pyclass))
+            
+    # fmi modification to add ice concentration from ice chart
+    def _set_sic_ic_handler(self):
+        """ Set the sea ice concentration (from ice chart) handler """
+        settings = self._l2def.auxdata.icechart
+        self._icechart = self._auxdata_handler.get_pyclass("icechart", settings.name) 
+        self._auxdata_handler.error.raise_on_error()
+        if settings.options is not None:
+            self._icechart.set_options(**settings.options)
+        self._icechart.initialize()
+        self.log.info("Processor Settings - IC handler: %s" % (
+            self._icechart.pyclass))
+        
+    # fmi modification to add ice concentration from aari ice chart
+    def _set_sic_ica_handler(self):
+        """ Set the sea ice concentration (from aari ice chart) handler """
+        settings = self._l2def.auxdata.icechart_aari
+        self._icechart_aari = self._auxdata_handler.get_pyclass("icechart_aari", settings.name)
+        self._auxdata_handler.error.raise_on_error()
+        if settings.options is not None:
+            self._icechart_aari.set_options(**settings.options)
+        self._icechart_aari.initialize()
+        self.log.info("Processor Settings - ICA handler: %s" % (
+            self._icechart_aari.pyclass))
 
     def _set_sitype_handler(self):
         """ Set the sea ice type handler """
@@ -330,6 +368,37 @@ class Level2Processor(DefaultLoggingClass):
             if error_status:
                 self._discard_l1b_procedure(error_codes, l1b_file)
                 continue
+                
+            # fmi version: add LEW, PP, LTPP, SSD, ice chart, aari ice chart, rio
+            
+            # Add leading edge width
+            self._get_leading_edge_width(l1b,l2)
+
+            # Add pulse peakiness
+            self._get_pulse_peakiness(l1b,l2)
+            
+            # Add late tail to peak power
+            self._get_late_tail_to_peak_power(l1b,l2)
+
+            # Add stack standard deviation
+            self._get_stack_standard_deviation(l1b,l2)
+
+            # Add sea ice concentration from ic
+            error_status, error_codes = self._get_sea_ice_concentration_ic(l2)
+            if error_status:
+                self._discard_l1b_procedure(error_codes, l1b_file)
+                continue
+ 
+            # Add sea ice concentration from ica
+            error_status, error_codes = self._get_sea_ice_concentration_ica(l2)
+            if error_status:
+                self._discard_l1b_procedure(error_codes, l1b_file)
+                continue
+
+	        # Add rio
+            self._get_rio(l2)
+            
+            # fmi version END
 
             # Get sea ice type (may be required for geometrical corrcetion)
             error_status, error_codes = self._get_sea_ice_type(l2)
@@ -458,6 +527,162 @@ class Level2Processor(DefaultLoggingClass):
                 self._sic.error.reset()
 
         return error_status, error_codes
+        
+    # fmi modification: add of iceconc from ic, iceconc from aari, rio, PP, LEW, SSD, LTPP
+    
+    def _get_sea_ice_concentration_ic(self, l2):
+        """ Get sea ice concentration and ice stage along track from auxdata """
+        
+        # Get along-track sea ice concentrations via the SIC IC handler class
+        # (see self._set_sic_ic_handler)
+        sics, msg = self._icechart.get_along_track_sic(l2)
+        
+        # Report any messages from the SIC IC handler
+        if not msg == "":
+            self.log.info("- "+msg)
+        
+        # Check and return error status and codes (e.g. missing file)
+        error_status = self._sic.error.status
+        error_codes = self._sic.error.codes
+        
+        # No error: add to l2data
+        if not error_status:
+            l2.ic_ct.set_value(sics[0])
+            l2.ic_ca.set_value(sics[1])
+            l2.ic_cb.set_value(sics[2])
+            l2.ic_cc.set_value(sics[3])
+            l2.ic_sa.set_value(sics[4])
+            l2.ic_sb.set_value(sics[5])
+            l2.ic_sc.set_value(sics[6])
+            
+        # on error: display error messages as warning and return status flag
+        # (this will cause the processor to report and skip this orbit segment)
+        else:
+            error_messages = self._icechart.error.get_all_messages()
+            for error_message in error_messages:
+                self.log.warning("! "+error_message)
+                self._icechart.error.reset()
+
+        return error_status, error_codes
+
+    def _get_sea_ice_concentration_ica(self, l2):
+        """ Get sea ice concentration along track from auxdata """
+        
+        # Get along-track sea ice concentrations via the SIC ICA handler class
+        # (see self._set_sic_ica_handler)
+        sics, msg = self._icechart_aari.get_along_track_sic(l2)
+        
+        # Report any messages from the SIC IC handler
+        if not msg == "":
+            self.log.info("- "+msg)
+        
+        # Check and return error status and codes (e.g. missing file)
+        error_status = self._sic.error.status
+        error_codes = self._sic.error.codes
+        
+        # No error: add to l2data
+        if not error_status:
+            l2.ica_ct.set_value(sics[0])
+            l2.ica_ca.set_value(sics[1])
+            l2.ica_cb.set_value(sics[2])
+            l2.ica_cc.set_value(sics[3])
+            l2.ica_sa.set_value(sics[4])
+            l2.ica_sb.set_value(sics[5])
+            l2.ica_sc.set_value(sics[6])
+            
+        # on error: display error messages as warning and return status flag
+        # (this will cause the processor to report and skip this orbit segment)
+        else:
+            error_messages = self._icechart_aari.error.get_all_messages()
+            for error_message in error_messages:
+                self.log.warning("! "+error_message)
+                self._icechart_aari.error.reset()
+
+        return error_status, error_codes
+
+    def _get_rio(self, l2):
+        """Hopefully get rio"""
+             
+        # Get along-track RIO
+        self._rio = get_l2_rio_handler('RIO')
+        rio, msg = self._rio.get_along_track_rio(l2)
+        
+        # Add to l2data
+        l2.rio_pc1.set_value(rio[0])
+        l2.rio_pc2.set_value(rio[1])
+        l2.rio_pc3.set_value(rio[2])
+        l2.rio_pc4.set_value(rio[3])
+        l2.rio_pc5.set_value(rio[4])
+        l2.rio_pc6.set_value(rio[5])
+        l2.rio_pc7.set_value(rio[6])
+        l2.rio_1asuper.set_value(rio[7])
+        l2.rio_1a.set_value(rio[8])
+        l2.rio_1b.set_value(rio[9])
+        l2.rio_1c.set_value(rio[10])
+        l2.rio_no_ice_class.set_value(rio[11])
+
+
+    def _get_leading_edge_width(self, l1b,l2):
+        """Get leading edge width"""
+        
+        for classifier_name in l1b.classifier.parameter_list:
+            if classifier_name == "leading_edge_width":
+                lew = getattr(l1b.classifier,"leading_edge_width")
+                leading_edge_width = lew
+        try:
+            l2.lew.set_value(lew)
+        except UnboundLocalError:
+            print 'INFO: no lew'
+            pass
+
+
+    def _get_pulse_peakiness(self, l1b, l2):
+        """Get pulse peakiness"""
+                
+        for classifier_name in l1b.classifier.parameter_list:
+            if classifier_name == "peakiness":
+                pulsep = getattr(l1b.classifier,"peakiness")
+                pulse_peakiness = pulsep
+            elif classifier_name == "peakiness_l":
+                pulsep_l = getattr(l1b.classifier,"peakiness_l")
+                pulse_peakiness_left = pulsep_l
+            elif classifier_name == "peakiness_r":
+                pulsep_r = getattr(l1b.classifier,"peakiness_r")
+                pulse_peakiness_right = pulsep_r
+        try:
+            l2.pp.set_value(pulsep)
+            l2.ppl.set_value(pulsep_l)
+            l2.ppr.set_value(pulsep_r)
+        except UnboundLocalError:
+            print 'INFO: no pp'
+            pass    
+
+    def _get_stack_standard_deviation(self, l1b, l2):
+        """Get stack standard deviation"""
+                
+        for classifier_name in l1b.classifier.parameter_list:
+            if classifier_name == "stack_standard_deviation":
+                ssdev = getattr(l1b.classifier,"stack_standard_deviation")
+                        
+        try:
+            l2.ssd.set_value(ssdev)
+        except UnboundLocalError:
+            print 'INFO: no ssd'
+            
+
+    def _get_late_tail_to_peak_power(self, l1b, l2):
+        """Get late tail to peak power"""
+
+        for classifier_name in l1b.classifier.parameter_list:
+            if classifier_name == "late_tail_to_peak_power":
+                ltpp = getattr(l1b.classifier,"late_tail_to_peak_power")
+        try:
+            l2.ltpp.set_value(ltpp)
+        except UnboundLocalError:
+            print 'INFO: no ltpp'
+            pass
+    
+    # fmi modification END
 
     def _get_sea_ice_type(self, l2):
         """ Get sea ice type (myi fraction) along track from auxdata """
